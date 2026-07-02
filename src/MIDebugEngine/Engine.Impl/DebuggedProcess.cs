@@ -1989,6 +1989,16 @@ namespace Microsoft.MIDebugEngine
         {
             List<VariableInformation> variables = new List<VariableInformation>();
 
+            // Synthetic frames (produced by a frame filter, e.g. coroutine frames) have no real
+            // debugger frame index, so -stack-list-variables --frame N cannot target them. If the
+            // user configured an expression to describe such a frame's storage, evaluate it and
+            // present its members as the frame's locals instead.
+            string syntheticExpression = _launchOptions.SyntheticFrameLocalsExpression;
+            if (ctx.IsSynthetic && !string.IsNullOrEmpty(syntheticExpression) && ctx.pc.HasValue)
+            {
+                return await GetSyntheticFrameLocals(thread, ctx, syntheticExpression);
+            }
+
             ValueListValue localsAndParameters = await MICommandFactory.StackListVariables(PrintValue.NoValues, thread.Id, ctx.Level);
 
             foreach (var localOrParamResult in localsAndParameters.Content)
@@ -2004,6 +2014,75 @@ namespace Microsoft.MIDebugEngine
                 variables.Add(ReturnValue);
 
             return variables;
+        }
+
+        // Builds the locals for a synthetic frame by evaluating the user-configured expression
+        // (with "{address}" replaced by the frame's address). The expression is self-contained, so
+        // it does not require a selectable "--frame" - which synthetic frames do not have.
+        //
+        // A debugger can only enumerate the members of a value that is a real program lvalue. When
+        // the locals expression is not (for example, it is rooted in a convenience function), the
+        // companion "names" expression supplies the member names and each local is read with an
+        // explicit "(value).member" expression. When no names expression is configured, the value
+        // is assumed to be enumerable and its members are returned directly.
+        private async Task<List<VariableInformation>> GetSyntheticFrameLocals(AD7Thread thread, ThreadContext ctx, string syntheticExpression)
+        {
+            List<VariableInformation> variables = new List<VariableInformation>();
+
+            string address = "0x" + ctx.pc.Value.ToString("x", CultureInfo.InvariantCulture);
+            string valueExpression = syntheticExpression.Replace("{address}", address);
+
+            string namesExpression = _launchOptions.SyntheticFrameLocalNamesExpression;
+            if (!string.IsNullOrEmpty(namesExpression))
+            {
+                string evaluatedNames = await MICommandFactory.DataEvaluateExpression(namesExpression.Replace("{address}", address), thread.Id, ctx.Level);
+                foreach (string name in ParseSyntheticLocalNames(evaluatedNames))
+                {
+                    string childExpression = "(" + valueExpression + ")." + name;
+                    VariableInformation local = new VariableInformation(name, childExpression, ctx, Engine, thread);
+                    await local.Eval(Engine.CurrentRadix());
+                    variables.Add(local);
+                }
+                return variables;
+            }
+
+            VariableInformation root = new VariableInformation(valueExpression, valueExpression, ctx, Engine, thread);
+            await root.Eval(Engine.CurrentRadix());
+            if (root.Error)
+            {
+                // Surface the evaluation failure as a single pseudo-local rather than an empty pane.
+                variables.Add(root);
+                return variables;
+            }
+
+            root.EnsureChildren();
+            if (root.Children != null)
+            {
+                variables.AddRange(root.Children);
+            }
+
+            return variables;
+        }
+
+        // Parses the whitespace-separated member-name list returned by the synthetic-frame names
+        // expression. A string value is rendered by the debugger with surrounding quotes, e.g.
+        // "n result"; strip them and split on whitespace.
+        private static IEnumerable<string> ParseSyntheticLocalNames(string evaluated)
+        {
+            if (string.IsNullOrWhiteSpace(evaluated))
+            {
+                return Array.Empty<string>();
+            }
+
+            string trimmed = evaluated.Trim();
+            int firstQuote = trimmed.IndexOf('"');
+            int lastQuote = trimmed.LastIndexOf('"');
+            if (firstQuote >= 0 && lastQuote > firstQuote)
+            {
+                trimmed = trimmed.Substring(firstQuote + 1, lastQuote - firstQuote - 1);
+            }
+
+            return trimmed.Split(new[] { ' ', '\t', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
         }
 
         //This method gets the value/type info for the method parameters without creating an MI debugger variable for them. For use in the callstack window
@@ -2050,7 +2129,16 @@ namespace Microsoft.MIDebugEngine
 
             foreach (var f in frames)
             {
-                int level = f.FindInt("level");
+                // Synthetic frames injected by a GDB Python frame filter (e.g. the TMC
+                // coroutine async-stack filter) have no "level" field. Their argument
+                // lists can't be matched back to a frame level, so skip them rather
+                // than throwing on the missing field.
+                uint? levelOpt = f.TryFindUint("level");
+                if (levelOpt == null)
+                {
+                    continue;
+                }
+                int level = (int)levelOpt.Value;
                 ListValue argList = null;
                 f.TryFind<ListValue>("args", out argList);
                 List<SimpleVariableInformation> args = new List<SimpleVariableInformation>();

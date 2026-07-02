@@ -993,6 +993,40 @@ namespace MICore
             }
         }
 
+        private string? _syntheticFrameLocalsExpression;
+        /// <summary>
+        /// [Optional] Expression template used to obtain the locals of a synthetic stack frame (a
+        /// frame with no real debugger frame index, e.g. a coroutine frame injected by a frame
+        /// filter). "{address}" is replaced with the frame's address; the members of the evaluated
+        /// expression are shown as the frame's locals.
+        /// </summary>
+        public string? SyntheticFrameLocalsExpression
+        {
+            get { return _syntheticFrameLocalsExpression; }
+            set
+            {
+                VerifyCanModifyProperty(nameof(SyntheticFrameLocalsExpression));
+                _syntheticFrameLocalsExpression = value;
+            }
+        }
+
+        private string? _syntheticFrameLocalNamesExpression;
+        /// <summary>
+        /// [Optional] Companion to <see cref="SyntheticFrameLocalsExpression"/>. Evaluated (with
+        /// "{address}" replaced by the frame's address) to a whitespace-separated list of member
+        /// names to display for a synthetic frame. Required when the locals expression is not a
+        /// real program lvalue (whose members the debugger cannot enumerate on its own).
+        /// </summary>
+        public string? SyntheticFrameLocalNamesExpression
+        {
+            get { return _syntheticFrameLocalNamesExpression; }
+            set
+            {
+                VerifyCanModifyProperty(nameof(SyntheticFrameLocalNamesExpression));
+                _syntheticFrameLocalNamesExpression = value;
+            }
+        }
+
         /// <summary>
         /// Collection of natvis files to use when evaluating
         /// </summary>
@@ -1960,6 +1994,8 @@ namespace MICore
             this.EnableDebuginfod = options.Debuginfod?.Enabled ?? false;
             int debuginfodTimeout = options.Debuginfod?.Timeout ?? 30;
             this.DebuginfodTimeout = debuginfodTimeout >= 0 ? debuginfodTimeout : 30;
+            this.SyntheticFrameLocalsExpression = options.SyntheticFrameLocalsExpression;
+            this.SyntheticFrameLocalNamesExpression = options.SyntheticFrameLocalNamesExpression;
         }
 
         protected void InitializeCommonOptions(Xml.LaunchOptions.BaseLaunchOptions source)

@@ -127,6 +127,29 @@ namespace MICore.Json.LaunchOptions
         /// </summary>
         [JsonProperty("debuginfod", DefaultValueHandling = DefaultValueHandling.Ignore)]
         public DebuginfodSettings? Debuginfod { get; set; }
+
+        /// <summary>
+        /// [Optional] Expression template used to obtain the local variables of a synthetic stack
+        /// frame - a frame produced by a debugger frame filter that has no real debugger frame index
+        /// (for example, a C++20 coroutine frame injected into the async call stack). Such frames
+        /// cannot be selected with "--frame", so their locals cannot be listed the usual way. When
+        /// this is set, the substring "{address}" is replaced with the frame's address and the
+        /// resulting expression is evaluated; the members of the resulting value are shown as the
+        /// frame's locals. Example: "*$__coro_frame_at({address})".
+        /// </summary>
+        [JsonProperty("syntheticFrameLocalsExpression", DefaultValueHandling = DefaultValueHandling.Ignore)]
+        public string? SyntheticFrameLocalsExpression { get; set; }
+
+        /// <summary>
+        /// [Optional] Companion to "syntheticFrameLocalsExpression". Because a debugger cannot list
+        /// the members of a value that is not a real program lvalue (e.g. a value produced by a
+        /// convenience function), this expression is evaluated to discover the member names to show.
+        /// "{address}" is replaced with the frame's address; the result must be a whitespace-separated
+        /// string of member names. Each local is then read as "(&lt;syntheticFrameLocalsExpression&gt;).&lt;name&gt;".
+        /// Example: "$__coro_local_names({address})".
+        /// </summary>
+        [JsonProperty("syntheticFrameLocalNamesExpression", DefaultValueHandling = DefaultValueHandling.Ignore)]
+        public string? SyntheticFrameLocalNamesExpression { get; set; }
     }
 
     internal class VisualizerFileConverter : JsonConverter

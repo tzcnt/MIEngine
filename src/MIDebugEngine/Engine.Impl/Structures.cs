@@ -12,7 +12,7 @@ namespace Microsoft.MIDebugEngine
 {
     internal class ThreadContext
     {
-        public ThreadContext(ulong? addr, MITextPosition textPosition, string function, uint level, string from)
+        public ThreadContext(ulong? addr, MITextPosition textPosition, string function, uint level, string from, bool isSynthetic = false)
         {
             pc = addr;
             sp = 0;
@@ -20,6 +20,7 @@ namespace Microsoft.MIDebugEngine
             Function = function;
             Level = level;
             From = from;
+            IsSynthetic = isSynthetic;
         }
 
         /// <summary>
@@ -33,6 +34,13 @@ namespace Microsoft.MIDebugEngine
         public string From { get; private set; }
 
         public uint Level { get; private set; }
+
+        /// <summary>
+        /// True when this frame was produced by a debugger frame filter and has no real debugger
+        /// frame index (e.g. a coroutine frame injected into the async call stack). Such frames
+        /// cannot be selected with "--frame"; their locals are fetched via an expression instead.
+        /// </summary>
+        public bool IsSynthetic { get; private set; }
 
         /// <summary>
         /// Finds the module for this context
